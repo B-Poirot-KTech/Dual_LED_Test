@@ -21,7 +21,7 @@ dec_still_high_from_low:
 
 
 % c-sdk{
-
+    //init func for program
     void debounce_program_init(PIO pio, uint sm, uint offset, uint debounce_output_pin, uint button_pin, float clock_div = 1){
         
 
