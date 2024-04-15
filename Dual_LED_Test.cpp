@@ -5,16 +5,14 @@
 #include "debounce.pio.h"
 
 const uint BUTTON0_SOCD_PIN = 14; //output for SOCD cleaned input a, driving LED during testing
-const uint BUTTON0 = 15; //input a
+const uint BUTTON0 = 15; //input a, represents a direction on 1 axis
 const uint PRE_SOCD_LED0 = 5; //used as outputs from PIO sm - debounced button presses
 
 const uint BUTTON1_SOCD_PIN = 17; //output for SOCD cleaned input b, driving LED during testing
-const uint BUTTON1 = 16; // input b
+const uint BUTTON1 = 16; // input b, represents opposite direction from a, on the same, single axis
 const uint PRE_SOCD_LED1 = 28; //used as outputs from PIO sm - debounced button presses
 
-uint PRE_SOCD_GPIOS[2] = {PRE_SOCD_LED0, PRE_SOCD_LED1};
-
-PIO pio;
+PIO pio = pio0;
 const float pio_freq = 2000;
 uint sm0;
 uint sm1;
@@ -24,12 +22,11 @@ float clock_div = (float)clock_get_hz(clk_sys) / pio_freq;
 //setup function for PIO debouncing program
 void debounce_pio_setup(bool clock_div_enable = false, float clock_div = 1)
 {
-    //pull inputs up
-    gpio_pull_up(BUTTON0); 
+    //pull BUTTON inputs for state machines up
+    gpio_pull_up(BUTTON0);
     gpio_pull_up(BUTTON1);
 
-    //claim
-    pio = pio0;
+    //claim state machines
     sm0 = pio_claim_unused_sm(pio, true);
     sm1 = pio_claim_unused_sm(pio, true);
     offset = pio_add_program(pio, &debounce_program);
@@ -47,45 +44,43 @@ void debounce_pio_setup(bool clock_div_enable = false, float clock_div = 1)
 
 void gpio_setup()
 {
+    //initialize gpio pins
     gpio_init(BUTTON0_SOCD_PIN);
-    gpio_set_dir(BUTTON0_SOCD_PIN, GPIO_OUT);
-
     gpio_init(BUTTON1_SOCD_PIN);
+
+    //set pins to outputs
+    gpio_set_dir(BUTTON0_SOCD_PIN, GPIO_OUT);
     gpio_set_dir(BUTTON1_SOCD_PIN, GPIO_OUT);
 
     stdio_init_all();
 };
 
+void socd_clean(uint gpio_a_debounced_input, uint gpio_b_debounced_input, uint socd_output_a, uint socd_output_b){
 
-void socd_clean(uint gpio_a_debounced, uint gpio_b_debounced, uint output_a_gpio, uint output_b_gpio){
+    uint32_t mask = gpio_get_all(); //sample the pins
+    bool gpio_a_debounced_val = (mask>>gpio_a_debounced_input)%2; 
+    bool gpio_b_debounced_val = (mask>>gpio_b_debounced_input)%2;
 
-    gpio_put_masked( ((1<<output_a_gpio)|(1<<output_b_gpio)), 0); //before SOCD clean, pull both inputs low
-    gpio_put(
-        output_a_gpio,
-        (gpio_get(gpio_a_debounced) && !(gpio_get(gpio_b_debounced)))
-    );
-    gpio_put(
-        output_b_gpio,
-        (gpio_get(gpio_b_debounced) && !(gpio_get(gpio_a_debounced)))
-    );
+    //if both buttons pressed, drom both low
+    if(gpio_a_debounced_val && gpio_b_debounced_val) 
+    {
+        gpio_put_masked( (1 << socd_output_a) | (1 << socd_output_b), false );
+    }
+    //otherwise, set corresponding pin high
+    else{
+        gpio_put(socd_output_a, gpio_a_debounced_val);
+        gpio_put(socd_output_b,gpio_b_debounced_val);
+    };
     return; 
  };
 
 
 int main(){
-    uint32_t mask;
-    bool pre_socd_input_satuses[2] = {
-        gpio_get(PRE_SOCD_GPIOS[0]),
-        gpio_get(PRE_SOCD_GPIOS[1])
-    };
+
     gpio_setup();
     debounce_pio_setup();
     while (true) {
-        mask = gpio_get_all(); //poll both gpios AT THE SAME TIME
-        pre_socd_input_satuses[0] = ( mask >> PRE_SOCD_GPIOS[0] ) %2;
-        pre_socd_input_satuses[1] = ( mask >> PRE_SOCD_GPIOS[1] ) %2;
         socd_clean(PRE_SOCD_LED0, PRE_SOCD_LED1, BUTTON0_SOCD_PIN, BUTTON1_SOCD_PIN);
-
     };
     return 0;
 };
